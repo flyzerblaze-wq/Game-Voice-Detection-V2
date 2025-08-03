@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Voice Spell Companion</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+
+        .status {
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-weight: bold;
+            font-size: 18px;
+            background: rgba(33, 150, 243, 0.2);
+            border: 2px solid #2196F3;
+        }
+
+        .status.listening {
+            background: rgba(76, 175, 80, 0.2);
+            border-color: #4CAF50;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        button {
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 50px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 10px;
+            transition: all 0.3s ease;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+        }
+
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .transcript {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            min-height: 60px;
+            font-family: monospace;
+            font-size: 16px;
+        }
+
+        .spells {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        .spell {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 10px;
+            border-radius: 10px;
+            font-size: 14px;
+        }
+
+        .spell.detected {
+            background: rgba(76, 175, 80, 0.5);
+            animation: glow 1s ease-in-out;
+        }
+
+        @keyframes glow {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .log {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+            text-align: left;
+        }
+
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .log-entry.success {
+            background: rgba(76, 175, 80, 0.2);
+        }
+
+        .log-entry.error {
+            background: rgba(244, 67, 54, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔮 Voice Spell Caster</h1>
+        
+        <div id="status" class="status">
+            Ready! Click "Listen" and say a spell name.
+        </div>
+
+        <div>
+            <button id="listenBtn" onclick="toggleListening()">🎤 Listen</button>
+        </div>
+
+        <div class="transcript" id="transcript">
+            Say: "fireball", "heal", "lightning", "shield", "teleport", or "ice"
+        </div>
+
+        <div class="spells">
+            <div class="spell" id="fireball">🔥 Fireball</div>
+            <div class="spell" id="heal">💚 Heal</div>
+            <div class="spell" id="lightning">⚡ Lightning</div>
+            <div class="spell" id="shield">🛡️ Shield</div>
+            <div class="spell" id="teleport">🌀 Teleport</div>
+            <div class="spell" id="ice">❄️ Ice</div>
+        </div>
+
+        <div class="log" id="log">
+            <div class="log-entry">Ready to detect spells!</div>
+        </div>
+    </div>
+
+    <script>
+        let recognition = null;
+        let isListening = false;
+
+        // Simple spell list
+        const spells = ['fireball', 'heal', 'lightning', 'shield', 'teleport', 'ice'];
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+
+            // Keep only last 8 entries
+            while (logDiv.children.length > 8) {
+                logDiv.removeChild(logDiv.firstChild);
+            }
+        }
+
+        function highlightSpell(spellName) {
+            // Remove all highlights
+            spells.forEach(spell => {
+                document.getElementById(spell).classList.remove('detected');
+            });
+
+            // Highlight detected spell
+            const spellElement = document.getElementById(spellName);
+            if (spellElement) {
+                spellElement.classList.add('detected');
+                setTimeout(() => {
+                    spellElement.classList.remove('detected');
+                }, 2000);
+            }
+        }
+
+        function detectSpell(text) {
+            const lowerText = text.toLowerCase();
+            
+            for (const spell of spells) {
+                if (lowerText.includes(spell)) {
+                    log(`🔥 Detected: ${spell}!`, 'success');
+                    highlightSpell(spell);
+                    
+                    // Update status temporarily
+                    document.getElementById('status').textContent = `🔮 Cast ${spell}!`;
+                    setTimeout(() => {
+                        if (isListening) {
+                            document.getElementById('status').textContent = '🎤 Listening for spells...';
+                        } else {
+                            document.getElementById('status').textContent = 'Ready! Click "Listen" and say a spell name.';
+                        }
+                    }, 2000);
+                    
+                    return spell;
+                }
+            }
+            return null;
+        }
+
+        function startListening() {
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                log('Speech recognition not supported. Use Chrome browser!', 'error');
+                return;
+            }
+
+            try {
+                recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+                recognition.continuous = false; // Simple: one shot recognition
+                recognition.interimResults = false;
+                recognition.lang = 'en-US';
+
+                recognition.onstart = function() {
+                    isListening = true;
+                    document.getElementById('status').textContent = '🎤 Listening for spells...';
+                    document.getElementById('status').classList.add('listening');
+                    document.getElementById('listenBtn').textContent = '⏹️ Stop';
+                    log('Listening started...', 'success');
+                };
+
+                recognition.onresult = function(event) {
+                    const transcript = event.results[0][0].transcript;
+                    document.getElementById('transcript').textContent = `Heard: "${transcript}"`;
+                    
+                    const detectedSpell = detectSpell(transcript);
+                    if (!detectedSpell) {
+                        log(`Heard "${transcript}" but no spell detected`, 'info');
+                    }
+                };
+
+                recognition.onerror = function(event) {
+                    log(`Error: ${event.error}`, 'error');
+                    stopListening();
+                };
+
+                recognition.onend = function() {
+                    stopListening();
+                };
+
+                recognition.start();
+                
+            } catch (error) {
+                log(`Failed to start: ${error.message}`, 'error');
+            }
+        }
+
+        function stopListening() {
+            isListening = false;
+            
+            if (recognition) {
+                try {
+                    recognition.stop();
+                } catch (e) {
+                    // Ignore stop errors
+                }
+                recognition = null;
+            }
+
+            document.getElementById('status').textContent = 'Ready! Click "Listen" and say a spell name.';
+            document.getElementById('status').classList.remove('listening');
+            document.getElementById('listenBtn').textContent = '🎤 Listen';
+            log('Listening stopped', 'success');
+        }
+
+        function toggleListening() {
+            if (isListening) {
+                stopListening();
+            } else {
+                startListening();
+            }
+        }
+
+        // Initialize
+        log('Voice Spell Companion loaded! Use Chrome browser for best results.');
+    </script>
+</body>
+</html>
